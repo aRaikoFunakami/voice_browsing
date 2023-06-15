@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- Bootstrapの読み込み -->
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+
+  <style>
+    /* Flexboxを使って中央揃えに */
+    .center-vertical {
+      display: flex;
+      flex-direction: column;  /* 項目を縦に並べる */
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    /* ボタン配置エリアのスタイル設定 */
+    .button-area {
+      display: flex;
+      justify-content: space-around;
+      margin-top: 10px;
+    }
+    /* レスポンス領域のスタイル設定 */
+    #response {
+      width: 400px;  /* 幅を400に変更 */
+      height: 600px;
+      overflow: auto;
+      margin: 20px;
+      padding: 20px;
+      border: 1px solid #ccc;
+      background-color: #f8f9fa; /* 背景色を指定 */
+      font-family: "Noto Sans", Arial, sans-serif; /* フォントを指定 */
+    }
+    /* アイコンのサイズ設定 */
+    .btn-img {
+      width: 64px;
+      height: 64px;
+      cursor: pointer;
+    }
+    /* クリックされたことがわかるように色を変える */
+    .clicked {
+      filter: brightness(70%);
+    }
+    /* Pythonプログラムのスタイル */
+    .python-code {
+      color: #007bff; /* Pythonプログラムの色（青） */
+      font-family: monospace; /* プログラム用のフォント */
+    }
+  </style>
+</head>
+<body>
+<div class="center-vertical">
+  <div id="response" class="border rounded p-3"></div>
+  <div class="button-area">
+    <img id="microphone-img" src="http://127.0.0.1:8001/images/mic.png" class="img-fluid btn-img">
+    <img id="okButton" src="http://127.0.0.1:8001/images/play.png" class="img-fluid btn-img" style="display:none;">
+  </div>
+  <p id="status" class="mt-3">Status: Waiting</p>
+  <p id="recognized-text" class="mt-3"></p>
+</div>
+
+<script>
+// Web Speech APIの初期化
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = new SpeechRecognition();
+
+// 言語を日本語に設定
+recognition.lang = 'ja-JP';
+
+// 音声合成の初期化
+const synth = window.speechSynthesis;
+
+// OKボタンがクリックされたかどうかのフラグ
+let okButtonClicked = false;
+
+recognition.onstart = function() {
+  console.log('Voice recognition started. Try speaking into the microphone.');
+  document.getElementById('status').textContent = 'Status: Listening';
+  document.getElementById('microphone-img').style.filter = 'invert(50%)'; // Start時に色を変更
+}
+
+recognition.onend = function() {
+  console.log('Voice recognition ended.');
+  document.getElementById('microphone-img').style.filter = ''; // End時に色を元に戻す
+  document.getElementById('status').textContent = 'Status: Waiting';
+
+  // OKボタンをグレーアウト解除
+  document.getElementById('okButton').classList.remove('greyed-out');
+  document.getElementById('okButton').disabled = false;
+
+  // フラグをリセット
+  okButtonClicked = false;
+}
+
+recognition.onresult = function(event) {
+  // 最後の結果を取得
+  const transcript = event.results[event.results.length-1][0].transcript;
+  
+  // 音声認識結果を表示
+  document.getElementById('recognized-text').textContent = `Recognized text: ${transcript}`;
+
+  // ローカルサーバーに送信
+  fetch(`http://127.0.0.1:8001/input?text=${encodeURIComponent(transcript)}`)
+    .then(response => response.json())
+    .then(data => {
+      console.log(data);
+      // レスポンスを表示
+      const responseDiv = document.getElementById('response');
+
+      // responseを表示
+      const responseText = document.createElement('p');
+      responseText.textContent = data.response;
+      responseText.classList.add('python-code'); // Pythonプログラム用のクラスを追加
+      responseDiv.appendChild(responseText);
+
+      // descriptionを表示
+      const descriptionText = document.createElement('p');
+      descriptionText.textContent = data.description;
+      responseDiv.appendChild(descriptionText);
+
+      // レスポンス領域を自動スクロール
+      responseDiv.scrollTop = responseDiv.scrollHeight;
+
+      // 音声読み上げ
+      const utterance = new SpeechSynthesisUtterance(descriptionText.textContent);
+      synth.speak(utterance);
+
+      // OKボタンを表示
+      const okButton = document.getElementById('okButton');
+      okButton.style.display = "inline";
+      okButton.addEventListener('click', function() {
+        if (!okButtonClicked) {
+          okButtonClicked = true;
+          okButton.classList.add('clicked');
+          fetch(`http://127.0.0.1:8001/exec?action=OK`)
+            .catch(error => console.error('Error:', error));
+        }
+      });
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+// マイクボタンのクリックイベントを設定
+document.getElementById('microphone-img').addEventListener('click', function() {
+  if (recognition.grammars.length === 0) {
+    // 音声認識を開始
+    recognition.start();
+  } else {
+    // 音声認識を終了
+    recognition.stop();
+    recognition.onend(); // recognition.onendを手動で呼び出す
+  }
+});
+</script>
+
+</body>
+</html>
